@@ -220,8 +220,12 @@
     window.scene = "load";
     
     /**
-    * converts screen coordinates to canvas coordinates
-    */
+     * Convert DOM screen coordinates to canvas (world) coordinates taking CSS
+     * layout into account.
+     * @param {number} screenX - Client X coordinate from mouse event.
+     * @param {number} screenY - Client Y coordinate from mouse event.
+     * @returns {{x:number,y:number}} Coordinates in canvas space.
+     */
     function screenToWorld(screenX, screenY) {
         //get canvas position and dimensions
         const rect = canvas.getBoundingClientRect();
@@ -243,8 +247,17 @@
             this.app = App;
             
             
-            //tile class
+            /**
+             * Represents a single tile in the grid. Stores visual state and
+             * provides simple update/draw helpers for smooth animation.
+             */
             class Tile {
+                /**
+                 * Create a Tile instance.
+                 * @param {number} col - Column index on the board.
+                 * @param {number} row - Row index on the board.
+                 * @param {number} [colorIndex=0] - Index into `tileColors` for visual color.
+                 */
                 constructor(col, row, colorIndex = 0) {
                     this.col = col;
                     this.row = row;
@@ -275,6 +288,14 @@
                     }
                 }
 
+                /**
+                 * Calculate and update the tile's target position based on grid coordinates.
+                 * If the tile is not currently moving, snap its displayed position to the target.
+                 * @param {number} tileSize
+                 * @param {number} boardX
+                 * @param {number} boardY
+                 * @returns {void}
+                 */
                 updatePosition(tileSize, boardX, boardY) {
                     this.targetX = boardX + this.col * tileSize + tileSize / 2;
                     this.targetY = boardY + this.row * tileSize + tileSize / 2;
@@ -285,6 +306,12 @@
                     }
                 }
 
+                /**
+                 * Progress the tile's animation toward its target position and
+                 * update visual properties such as `scale` and `opacity`.
+                 * @param {number} dt - Delta time in seconds since last frame.
+                 * @returns {void}
+                 */
                 animate(dt) {
                     //dont animate while user is dragging this tile
                     if (this.beingDragged) return;
@@ -327,6 +354,12 @@
                     }
                 }
 
+                /**
+                 * Render the tile to the global `ctx` canvas context.
+                 * @param {number} tileSize - Size used for drawing calculations.
+                 * @param {boolean} [isDragging=false] - Whether the tile is currently being dragged (affects styling).
+                 * @returns {void}
+                 */
                 draw(tileSize, isDragging = false) {
                     ctx.globalAlpha = this.opacity;
                     ctx.save();
@@ -379,8 +412,17 @@
                 }
             }
             
-            //tile Grid
+            /**
+             * Small left-side pool of tiles (spare tiles). Manages positions for
+             * pooled tiles and supports dragging from the pool.
+             */
             class TilePool {
+                /**
+                 * Create a TilePool to hold spare tiles displayed beside the board.
+                 * @param {number} tileSize
+                 * @param {number} [left=10]
+                 * @param {number} [top=10]
+                 */
                 constructor(tileSize, left = 10, top = 10) {
                     this.tileSize = tileSize;
                     this.left = left;
@@ -398,6 +440,11 @@
                     this.invalidDropTime = 0;
                 }
 
+                /**
+                 * Compute the drawing target position for a pooled slot index.
+                 * @param {number} slot
+                 * @returns {{x:number,y:number}}
+                 */
                 getTarget(slot) {
                     const x = this.left + slot * this.spacing + this.tileSize / 2;
                     const y = this.top + this.tileSize / 2;
@@ -407,6 +454,11 @@
                     };
                 }
 
+                /**
+                 * Add a tile to the end of the pool and position it.
+                 * @param {Tile} tile
+                 * @returns {void}
+                 */
                 add(tile) {
                     const slot = this.tiles.length;
                     tile.poolIndex = slot;
@@ -427,6 +479,12 @@
                     this.tiles.push(tile);
                 }
 
+                /**
+                 * Insert a tile at the specified pool index, shifting others.
+                 * @param {Tile} tile
+                 * @param {number} idx
+                 * @returns {void}
+                 */
                 insertAt(tile, idx) {
                     //insert back into pool at index and renumber
                     this.tiles.splice(idx, 0, tile);
@@ -440,6 +498,11 @@
                     }
                 }
 
+                /**
+                 * Remove a tile from the pool and re-layout remaining tiles.
+                 * @param {Tile} tile
+                 * @returns {void}
+                 */
                 remove(tile) {
                     const idx = this.tiles.indexOf(tile);
                     if (idx >= 0) this.tiles.splice(idx, 1);
@@ -454,6 +517,12 @@
                     }
                 }
 
+                /**
+                 * Find a pooled tile at the given world coordinates (center-based hit test).
+                 * @param {number} x
+                 * @param {number} y
+                 * @returns {Tile|null}
+                 */
                 getTileAtPos(x, y) {
                     // tile "radius" (half the side length, very convenient for center coordinates)
                     const rad = this.tileSize / 2;
@@ -471,6 +540,11 @@
                     return null;
                 }
 
+                /**
+                 * Handle pointer input for starting, updating, and ending drags on pooled tiles.
+                 * Reads global `mouse` state and updates pool/tiles accordingly.
+                 * @returns {void}
+                 */
                 handleInput() {
                     const { screenX, screenY, down, wasDown } = mouse;
                     // detect drag 
@@ -628,6 +702,11 @@
                     }*/
                 }
 
+                /**
+                 * Update pool-level timed state (e.g. invalid-drop animations).
+                 * @param {number} dt - Delta time in seconds.
+                 * @returns {void}
+                 */
                 update(dt) {
                     if (this.invalidDrop && this.invalidDropTile) {
                         this.invalidDropTime += dt;
@@ -675,7 +754,19 @@
                 }
             }
 
+            /**
+             * The main tile board class. Contains a 2D grid of `Tile` objects,
+             * handles swapping, gravity, match detection, and board updates.
+             */
             class TileBoard {
+                /**
+                 * Create a TileBoard that manages the grid of tiles and game mechanics.
+                 * @param {number} [cols=6]
+                 * @param {number} [rows=6]
+                 * @param {number} [boardX=20]
+                 * @param {number} [boardY=120]
+                 * @param {number} [tileSize=85]
+                 */
                 constructor(cols = 6, rows = 6, boardX = 20, boardY = 120, tileSize = 85) {
                     this.cols = cols;
                     this.rows = rows;
@@ -709,6 +800,11 @@
                     this.initBoard();
                 }
                 
+                /**
+                 * Initialize or regenerate the board until no initial matches exist
+                 * and at least one possible move is present.
+                 * @returns {void}
+                 */
                 initBoard() {
                     //fill board regenerate entire board until no initial connected matches exist
                     const makeBoard = () => {
@@ -730,10 +826,22 @@
                 }
                 
                 //initial board will be regenerated if any connected matches are present
+                /**
+                 * Check whether a tile placement is valid. Placeholder that currently always returns true.
+                 * @param {number} col
+                 * @param {number} row
+                 * @returns {boolean}
+                 */
                 isTileValid(col, row) {
                     return true;
                 }
                 
+                /**
+                 * Return the tile at world coordinates, or null if none.
+                 * @param {number} x
+                 * @param {number} y
+                 * @returns {Tile|null}
+                 */
                 getTileAtPos(x, y) {
                     const col = Math.floor((x - this.boardX) / this.tileSize);
                     const row = Math.floor((y - this.boardY) / this.tileSize);
@@ -744,6 +852,12 @@
                     return null;
                 }
                 
+                /**
+                 * Handle selection of a tile. If a different tile is already selected,
+                 * attempt to swap if adjacent.
+                 * @param {Tile} tile
+                 * @returns {void}
+                 */
                 selectTile(tile) {
                     if (this.swapInProgress) return;
                     
@@ -762,12 +876,24 @@
                     }
                 }
                 
+                /**
+                 * Test whether two tiles are adjacent on the grid.
+                 * @param {Tile} tile1
+                 * @param {Tile} tile2
+                 * @returns {boolean}
+                 */
                 areAdjacent(tile1, tile2) {
                     const colDiff = Math.abs(tile1.col - tile2.col);
                     const rowDiff = Math.abs(tile1.row - tile2.row);
                     return (colDiff === 1 && rowDiff === 0) || (colDiff === 0 && rowDiff === 1);
                 }
                 
+                /**
+                 * Swap two tiles in the grid and set them moving toward updated targets.
+                 * @param {Tile} tile1
+                 * @param {Tile} tile2
+                 * @returns {void}
+                 */
                 swapTiles(tile1, tile2) {
                     //swap positions in grid
                     [this.tiles[tile1.row][tile1.col], this.tiles[tile2.row][tile2.col]] =
@@ -794,6 +920,12 @@
                     this.swapInProgress = true;
                 }
                 
+                /**
+                 * Reverse a previously performed swap (animation-aware).
+                 * @param {Tile} tile1
+                 * @param {Tile} tile2
+                 * @returns {void}
+                 */
                 reverseSwap(tile1, tile2) {
                     //reverse a swap with animation
                     [this.tiles[tile1.row][tile1.col], this.tiles[tile2.row][tile2.col]] =
@@ -819,6 +951,11 @@
                     this.swapInProgress = true;
                 }
                 
+                /**
+                 * Find connected components of tiles that satisfy matching rules.
+                 * Returns an array of matched tiles.
+                 * @returns {Tile[]}
+                 */
                 findMatches() {
                     //find connected components where tiles have same color and both have indicators on the touching side
                     const matched = [];
@@ -876,6 +1013,10 @@
                     return matched;
                 }
                 
+                /**
+                 * Mark matched tiles for pooling and initiate their movement into the pool.
+                 * @returns {void}
+                 */
                 handleMatches() {
                     let matched = this.findMatches();
 
@@ -906,6 +1047,10 @@
                     this.swapInProgress = true;
                 }
                 
+                /**
+                 * Apply gravity to the board so tiles fall down into empty spaces.
+                 * @returns {void}
+                 */
                 applyGravity() {
                     for (let col = 0; col < this.cols; col++) {
                         let writePos = this.rows - 1;
@@ -936,6 +1081,10 @@
                     }
                 }
                 
+                /**
+                 * Fill empty slots on the board by creating new tiles and then check for cascades.
+                 * @returns {void}
+                 */
                 fillGaps() {
                     for (let col = 0; col < this.cols; col++) {
                         for (let row = 0; row < this.rows; row++) {
@@ -958,6 +1107,10 @@
                     }, 400);
                 }
 
+                /**
+                 * Determine whether there exists at least one legal adjacent swap that would create a match.
+                 * @returns {boolean}
+                 */
                 hasPossibleMove() {
                     //returns true if there exists at least one adjacent swap that would create a match
                     const inBounds = (r, c) => r >= 0 && r < this.rows && c >= 0 && c < this.cols;
@@ -1014,6 +1167,10 @@
                     return false;
                 }
 
+                /**
+                 * Randomly shuffle tiles until a solvable board (no immediate matches and at least one possible move) is produced.
+                 * @returns {void}
+                 */
                 reshuffleBoard() {
                     //flatten tiles
                     const list = [];
@@ -1053,6 +1210,11 @@
                     } while (this.findMatches().length > 0 || !this.hasPossibleMove());
                 }
                 
+                /**
+                 * Update board state: animate tiles, detect pooling completions, handle swaps and matches.
+                 * @param {number} dt - Delta time in seconds.
+                 * @returns {void}
+                 */
                 update(dt) {
                     //update all tiles
                     for (let row = 0; row < this.rows; row++) {
@@ -1157,6 +1319,10 @@
                     }
                 }
                 
+                /**
+                 * Render the board, grid, pooled tiles, and visual feedback to the global `ctx`.
+                 * @returns {void}
+                 */
                 draw() {
                     //draw board background
                     ctx.fillStyle = "rgba(30, 30, 60, 0.8)";
@@ -1225,6 +1391,11 @@
                     }
                 }
                 
+                /**
+                 * Handle mouse/touch input for selecting, dragging and dropping tiles on the board.
+                 * Reads global `mouse` state.
+                 * @returns {void}
+                 */
                 handleInput() {
                     const { screenX, screenY, down, wasDown } = mouse;
                     //detect drag 
@@ -1315,6 +1486,10 @@
              * @typedef {TileFloor}
              */
             class TileFloor {
+                /**
+                 * TileFloor is a lightweight container for floor metadata and tiles.
+                 * @param {number} [tileSize=85]
+                 */
                 constructor(tileSize = 85) {
                     this.tileSize = 85;
                     this.tiles = [];
@@ -1487,6 +1662,10 @@
 
     //start a lightweight drawer for pool andd tilemap so they render on top
     (function startTileDraw() {
+        /**
+         * Background drawer used to render auxiliary layers (tile pool / tile map)
+         * above the main loop. Runs on its own RAF.
+         */
         function loop() {
             if (window.App && window.App.tilePool && window.App.tileMap) {
                 //draw on main ctx
@@ -1512,6 +1691,12 @@
 
 
     //a render loop with a timestamp for dt updating @Judges
+    /**
+     * Main render function invoked by the RAF-driven loop. Updates timing values,
+     * clears the canvas and runs the application `App.run` with computed delta time.
+     * @param {DOMHighResTimeStamp|number} timestamp
+     * @returns {void}
+     */
     const render = (timestamp) => {
         try {
             //prefer the rAF timestamp when present
@@ -1583,6 +1768,11 @@
     * @param {number} now - the current timestamp provided by requestanimationframe
     * @returns {void}
     */
+    /**
+     * High level loop that guards running state and schedules the next RAF.
+     * @param {number} now - The current timestamp from requestAnimationFrame.
+     * @returns {void}
+     */
     function loop(now) {
         //if (!debug.freeze) {
         if (!running) {
@@ -1703,6 +1893,11 @@
     });
     
     //intiate...
+    /**
+     * Open the current document in a new window (simple fullscreen mode). Copies
+     * the current DOM HTML into the new window and sets a session flag to skip the menu.
+     * @returns {void}
+     */
     const openInFullscreen = () => {
         sessionStorage.setItem('skipMenu', 'true');
         
