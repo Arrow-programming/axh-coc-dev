@@ -144,7 +144,7 @@
             ctx.bezierCurveTo(196,203,200,201,207,211);
             ctx.stroke();
             ctx.closePath();
-            
+             
             
             ctx.beginPath();
             ctx.lineTo(224,206);
@@ -1178,7 +1178,7 @@
                         }
                     }
                     
-                    //handle matches if no tiles are moving
+                    //only check for matches after all tiles have finished falling
                     let anyMoving = false;
                     for (let row = 0; row < this.rows; row++) {
                         for (let col = 0; col < this.cols; col++) {
@@ -1188,8 +1188,9 @@
                         }
                     }
                     
+                    //only process swaps and matches when gravity has completely settled
                     if (!anyMoving && this.swapInProgress) {
-                        //if this was a user-initiated swap, check its result after the visual swap
+                        //if this was a user-initiated swap, check its result after the visual swap and grav settles
                         if (this.pendingUserSwap) {
                             const matches = this.findMatches();
                             if (matches.length > 0) {
@@ -1219,8 +1220,7 @@
                             this.reversingSwap = null;
                         } 
                         else {
-                            //not a user swap if there are matches, handle them;
-                            //otherwise if no possible move exists, reshuffle the board
+                            //not a user swap: check for cascade matches after gravity settles
                             const matches = this.findMatches();
                             if (matches.length > 0) {
                                 this.handleMatches();
@@ -1228,6 +1228,7 @@
                                 if (!this.hasPossibleMove()) {
                                     this.reshuffleBoard();
                                 }
+                                this.swapInProgress = false;
                             }
                         }
                     }
@@ -1390,32 +1391,11 @@
                             }
                         }
 
-                        //if no swap, try placing onto the right grid
+                        //if no swap, animate back to original board position
                         if (!swapped) {
-                            let gridPlaced = false;
-
-                            if (window.App && window.App.rightGrid) {
-                                const grid = window.App.rightGrid;
-                                const cell = grid.getCellAtPos(tile.x, tile.y);
-                                if (cell && !grid.tiles[cell.row][cell.col]) {
-                                    //remove from the board array (not from pool)
-                                    this.tiles[originalTile.row][originalTile.col] = null;
-                                    grid.placeTile(tile, cell.col, cell.row);
-                                    //gravity fill the gap and spawn a replacement
-                                    this.applyGravity();
-                                    this.fillGaps();
-                                    tile.beingDragged = false;
-                                    tile.scale = 1;
-                                    gridPlaced = true;
-                                }
-                            }
-
-                            if (!gridPlaced) {
-                                //animate back to original board position
-                                tile.targetX = originalTile.x;
-                                tile.targetY = originalTile.y;
-                                tile.isMoving = true;
-                            }
+                            tile.targetX = originalTile.x;
+                            tile.targetY = originalTile.y;
+                            tile.isMoving = true;
                         }
 
                         if (this.draggedTile) this.draggedTile.beingDragged = false;
